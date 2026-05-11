@@ -1,0 +1,27 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Tauri / Rust
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Build artifacts
+dist/
+
+# Local input scratch
+Input/
+
+# Minisign signing key — NEVER commit
+.minisign/
+
+# Locally built logo (regenerable via scripts/make-base-logo.mjs)
+logo.png

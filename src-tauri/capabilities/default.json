@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default permissions for Gravyr Batcher",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:app:default",
+    "core:event:default",
+    "core:webview:allow-internal-toggle-devtools",
+    "dialog:default",
+    "updater:default",
+    "process:default"
+  ]
+}

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gravyr Batcher</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Gravyr Batcher</h1>
+        <p class="subtitle">Text + logo overlay in batch</p>
+      </header>
+
+      <section class="panes">
+        <section id="dropzone-sheet" class="dropzone" data-kind="sheet">
+          <div class="dropzone-inner">
+            <svg viewBox="0 0 24 24" width="36" height="36" aria-hidden="true">
+              <path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zM8 13h8v2H8v-2zm0 4h8v2H8v-2z"/>
+            </svg>
+            <p class="dz-title" id="sheet-title">Drop a CSV or XLSX</p>
+            <p class="dz-hint" id="sheet-hint">first column = folder name</p>
+            <button id="pick-sheet" class="btn-pick" type="button">Choose a file</button>
+          </div>
+        </section>
+
+        <section id="dropzone-images" class="dropzone" data-kind="images">
+          <div class="dropzone-inner">
+            <svg viewBox="0 0 24 24" width="36" height="36" aria-hidden="true">
+              <path fill="currentColor" d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3 3.5-4.5L19 18H5l3.5-4.5z"/>
+            </svg>
+            <p class="dz-title" id="images-title">Drop images or a folder</p>
+            <p class="dz-hint" id="images-hint">JPG, JPEG, PNG</p>
+            <div class="pick-buttons">
+              <button id="pick-images" class="btn-pick" type="button">Choose images</button>
+              <button id="pick-folder" class="btn-pick" type="button">Choose folder</button>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <button id="generate" class="btn btn-primary" disabled>
+        <span id="generate-label">Generate</span>
+      </button>
+
+      <section id="progress-wrap" class="progress-wrap" hidden>
+        <progress id="progress" max="1" value="0"></progress>
+        <p id="progress-label" class="progress-label">0 / 0</p>
+        <p id="progress-file" class="progress-file"></p>
+      </section>
+
+      <section id="summary" class="summary" hidden></section>
+
+      <footer>
+        <button id="refresh" class="link" type="button" title="Check for updates">
+          Check for updates
+        </button>
+        <span id="version" class="version"></span>
+      </footer>
+    </main>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
