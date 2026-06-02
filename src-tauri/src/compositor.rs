@@ -7,51 +7,151 @@ use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::imageops::FilterType as ResizeFilter;
 use image::{ImageEncoder, Rgb, RgbImage, RgbaImage};
 use imageproc::drawing::draw_text_mut;
+use serde::Deserialize;
 use turbojpeg::{Compressor, Image as TjImage, PixelFormat, Subsamp};
 
 const AEONIK_TTF: &[u8] = include_bytes!("../../Data/Aeonik-Regular.ttf");
-const LOGO_1X1_SVG: &[u8] = include_bytes!("../../Data/logo_1x1.svg");
 const LOGO_9X16_SVG: &[u8] = include_bytes!("../../Data/logo_16-9.svg");
 
 const JPEG_QUALITY: i32 = 92;
 const TEXT_FONT_PX: f32 = 84.0;
 const LINE_HEIGHT_FACTOR: f32 = 1.18;
 
+// Everything is composed on a single 9:16 canvas. The 1:1 output is a centered
+// crop of that composed image (no independent square layout). See CLAUDE.md.
+const COMP_W: u32 = 1080;
+const COMP_H: u32 = 1920;
+const COMP_ASPECT: (u32, u32) = (9, 16);
+const SQUARE_SIDE: u32 = 1080;
+/// template-1 positions, in the 1080×1920 composition's pixel space.
+const T1_TEXT_ORIGIN: (i32, i32) = (104, 350);
+const T1_LOGO_POS: (i32, i32) = (357, 1297);
+
+/// Output variant. Both derive from the same composed 9:16 canvas: `Portrait916`
+/// encodes it as-is; `Square1x1` center-crops it to 1080×1080 first.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Format {
-    Square,
     Portrait916,
+    Square1x1,
 }
 
 impl Format {
     pub fn suffix(self) -> &'static str {
         match self {
-            Format::Square => "1x1",
             Format::Portrait916 => "9x16",
+            Format::Square1x1 => "1x1",
         }
     }
+}
 
-    fn canvas(self) -> (u32, u32) {
-        match self {
-            // The Figma frame labelled "1x1" is actually 1080×1350 (4:5).
-            // Keep the filename suffix as `_1x1` per spec but match the
-            // designer's working canvas pixel-for-pixel.
-            Format::Square => (1080, 1350),
-            Format::Portrait916 => (1080, 1920),
-        }
+/// Horizontal anchoring for the text block / logo in `custom` layouts.
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Anchor {
+    Left,
+    Center,
+    Right,
+}
+
+/// A layout choice coming from the UI. `Template1` reproduces the historical
+/// hard-coded positions; `Custom` places the text block and logo from anchors
+/// and canvas-relative fractions. Field keys are snake_case to match serde.
+#[derive(Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LayoutSpec {
+    Template1,
+    Custom {
+        logo_x: Anchor,
+        /// Top of the logo, as a fraction (0..1) of canvas height.
+        logo_y: f32,
+        text_x: Anchor,
+        /// Top of the text block, as a fraction (0..1) of canvas height.
+        text_y: f32,
+        /// Text block width, as a fraction (0..1) of canvas width.
+        text_w: f32,
+        /// Font size in canvas px (1080-wide space).
+        #[serde(default = "default_font_px")]
+        font_px: f32,
+        /// Line-height multiplier (line advance = font_px × this).
+        #[serde(default = "default_line_height")]
+        line_height: f32,
+        /// Letter-spacing as a percentage of the font size (0 = none).
+        #[serde(default)]
+        letter_spacing: f32,
+    },
+}
+
+fn default_font_px() -> f32 {
+    TEXT_FONT_PX
+}
+fn default_line_height() -> f32 {
+    LINE_HEIGHT_FACTOR
+}
+
+/// A `LayoutSpec` resolved to absolute pixel positions for a given format.
+pub struct Layout {
+    pub text_origin: (i32, i32),
+    pub text_max_width: i32,
+    pub logo_pos: (i32, i32),
+    pub font_px: f32,
+    pub line_height: f32,
+    pub letter_spacing_px: f32,
+}
+
+/// Left/right margin used for `Left`/`Right` anchored content in custom layouts,
+/// matching `template-1`'s text margin so the two modes stay visually consistent.
+const CUSTOM_MARGIN: i32 = 104;
+
+fn anchor_x(anchor: Anchor, canvas_w: u32, content_w: u32) -> i32 {
+    match anchor {
+        Anchor::Left => CUSTOM_MARGIN,
+        Anchor::Center => ((canvas_w as i32) - content_w as i32) / 2,
+        Anchor::Right => (canvas_w as i32) - content_w as i32 - CUSTOM_MARGIN,
     }
+}
 
-    fn aspect(self) -> (u32, u32) {
-        match self {
-            Format::Square => (4, 5),
-            Format::Portrait916 => (9, 16),
+/// Resolve a `LayoutSpec` to pixel positions on the 1080×1920 composition.
+/// `logo_w`/`logo_h` are the rasterized logo's dimensions (used for `Center`/`Right`
+/// anchoring).
+pub fn resolve_layout(spec: &LayoutSpec, logo_w: u32, logo_h: u32) -> Layout {
+    let (cw, ch) = (COMP_W, COMP_H);
+    match spec {
+        LayoutSpec::Template1 => {
+            let (ox, oy) = T1_TEXT_ORIGIN;
+            Layout {
+                text_origin: (ox, oy),
+                text_max_width: (cw as i32 - 2 * ox).max(0),
+                logo_pos: T1_LOGO_POS,
+                font_px: TEXT_FONT_PX,
+                line_height: LINE_HEIGHT_FACTOR,
+                letter_spacing_px: 0.0,
+            }
         }
-    }
-
-    fn text_origin(self) -> (i32, i32) {
-        match self {
-            Format::Square => (104, 260),
-            Format::Portrait916 => (104, 350),
+        LayoutSpec::Custom {
+            logo_x,
+            logo_y,
+            text_x,
+            text_y,
+            text_w,
+            font_px,
+            line_height,
+            letter_spacing,
+        } => {
+            let text_box_w = (text_w.clamp(0.0, 1.0) * cw as f32).round() as i32;
+            let tx = anchor_x(*text_x, cw, text_box_w.max(0) as u32);
+            let ty = (text_y.clamp(0.0, 1.0) * ch as f32).round() as i32;
+            let lx = anchor_x(*logo_x, cw, logo_w);
+            // logo_y is the logo's vertical CENTER → convert to a top-left y.
+            let ly = (logo_y.clamp(0.0, 1.0) * ch as f32).round() as i32 - logo_h as i32 / 2;
+            let fp = if *font_px > 0.0 { *font_px } else { TEXT_FONT_PX };
+            Layout {
+                text_origin: (tx, ty),
+                text_max_width: text_box_w.max(0),
+                logo_pos: (lx, ly),
+                font_px: fp,
+                line_height: if *line_height > 0.0 { *line_height } else { LINE_HEIGHT_FACTOR },
+                letter_spacing_px: letter_spacing / 100.0 * fp,
+            }
         }
     }
 }
@@ -73,16 +173,10 @@ impl Kind {
     }
 }
 
-pub struct LogoSet {
-    pub square: RgbaImage,
-    pub portrait: RgbaImage,
-}
-
-pub fn rasterize_logos() -> Result<LogoSet, String> {
-    Ok(LogoSet {
-        square: rasterize_svg(LOGO_1X1_SVG, 268, 144)?,
-        portrait: rasterize_svg(LOGO_9X16_SVG, 368, 198)?,
-    })
+/// Rasterize the brand logo used on the 9:16 composition (the 1:1 output is a
+/// crop of that composition, so it shares the same logo).
+pub fn rasterize_logo() -> Result<RgbaImage, String> {
+    rasterize_svg(LOGO_9X16_SVG, 368, 198)
 }
 
 fn rasterize_svg(svg_bytes: &[u8], w: u32, h: u32) -> Result<RgbaImage, String> {
@@ -115,40 +209,39 @@ fn rasterize_svg(svg_bytes: &[u8], w: u32, h: u32) -> Result<RgbaImage, String> 
 
 pub struct PreparedCanvas {
     pub canvas: RgbImage,
-    pub format: Format,
     pub kind: Kind,
 }
 
+/// Build the shared 9:16 composition (crop source to 9:16 → resize 1080×1920 →
+/// gradient → logo). Text is drawn later, per message, by `compose_text`.
 pub fn prepare_canvas(
     source_path: &Path,
-    format: Format,
-    logos: &LogoSet,
+    logo: &RgbaImage,
+    logo_pos: (i32, i32),
 ) -> Result<PreparedCanvas, String> {
     let kind = Kind::from_path(source_path).ok_or_else(|| "unsupported format".to_string())?;
-    let img = image::open(source_path).map_err(|e| format!("decode: {e}"))?;
+    // Decode by sniffing the file's magic bytes, not its extension: some inputs
+    // carry the wrong extension (e.g. JPEG bytes in a .png), and extension-based
+    // decoding (image::open) would fail on every one of them.
+    let img = image::ImageReader::open(source_path)
+        .map_err(|e| format!("open: {e}"))?
+        .with_guessed_format()
+        .map_err(|e| format!("read header: {e}"))?
+        .decode()
+        .map_err(|e| format!("decode: {e}"))?;
 
     let (w, h) = (img.width(), img.height());
-    let (aw, ah) = format.aspect();
+    let (aw, ah) = COMP_ASPECT;
     let cropped = center_crop_to_aspect(img.to_rgb8(), w, h, aw, ah);
 
-    let (cw, ch) = format.canvas();
-    let mut resized = image::imageops::resize(&cropped, cw, ch, ResizeFilter::Lanczos3);
+    let mut resized = image::imageops::resize(&cropped, COMP_W, COMP_H, ResizeFilter::Lanczos3);
 
     apply_gradient(&mut resized);
 
-    let logo = match format {
-        Format::Square => &logos.square,
-        Format::Portrait916 => &logos.portrait,
-    };
-    let (logo_x, logo_y) = match format {
-        Format::Square => (((cw as i32) - (logo.width() as i32)) / 2, 931),
-        Format::Portrait916 => (357, 1297),
-    };
-    overlay_rgba(&mut resized, logo, logo_x, logo_y);
+    overlay_rgba(&mut resized, logo, logo_pos.0, logo_pos.1);
 
     Ok(PreparedCanvas {
         canvas: resized,
-        format,
         kind,
     })
 }
@@ -273,58 +366,117 @@ fn font_supports(font: &impl Font, text: &str) -> bool {
     })
 }
 
-pub fn render_with_text(
+/// Draw `text` onto a clone of the composed 9:16 canvas and return it. The result
+/// is then encoded to one or more `Format`s by `encode_output`.
+pub fn compose_text(
     stage: &PreparedCanvas,
     text: &str,
     aeonik: &FontRef<'static>,
-    out_path: &Path,
-) -> Result<(), String> {
+    text_origin: (i32, i32),
+    text_max_width: i32,
+    font_px: f32,
+    line_height_factor: f32,
+    letter_spacing_px: f32,
+) -> RgbImage {
     let mut canvas = stage.canvas.clone();
-    let scale = PxScale::from(TEXT_FONT_PX);
-    let line_height = (TEXT_FONT_PX * LINE_HEIGHT_FACTOR).round() as i32;
-    let (ox, oy) = stage.format.text_origin();
+    let scale = PxScale::from(font_px);
+    let line_height = (font_px * line_height_factor).round() as i32;
+    let (ox, oy) = text_origin;
+    let max_w = text_max_width.max(0) as u32;
+    let ls = letter_spacing_px;
     let white = Rgb([255_u8, 255, 255]);
 
     if font_supports(aeonik, text) {
-        draw_multiline(&mut canvas, text, ox, oy, line_height, scale, white, aeonik);
+        draw_multiline(&mut canvas, text, ox, oy, max_w, line_height, scale, white, aeonik, ls);
     } else if let Some(arial) = arial() {
-        draw_multiline(&mut canvas, text, ox, oy, line_height, scale, white, arial);
+        draw_multiline(&mut canvas, text, ox, oy, max_w, line_height, scale, white, arial, ls);
     } else {
         // No fallback available — render anyway with Aeonik. Missing glyphs
         // become .notdef boxes, but the file is still produced and the user
         // sees the issue plainly.
-        draw_multiline(&mut canvas, text, ox, oy, line_height, scale, white, aeonik);
+        draw_multiline(&mut canvas, text, ox, oy, max_w, line_height, scale, white, aeonik, ls);
     }
 
-    encode(&canvas, stage.kind, out_path)
+    canvas
 }
 
+/// Encode a composed 9:16 canvas to one `Format`. `Portrait916` writes it as-is;
+/// `Square1x1` center-crops it to 1080×1080 first.
+pub fn encode_output(
+    canvas: &RgbImage,
+    format: Format,
+    kind: Kind,
+    out_path: &Path,
+) -> Result<(), String> {
+    match format {
+        Format::Portrait916 => encode(canvas, kind, out_path),
+        Format::Square1x1 => {
+            let y0 = (COMP_H - SQUARE_SIDE) / 2;
+            let cropped =
+                image::imageops::crop_imm(canvas, 0, y0, SQUARE_SIDE, SQUARE_SIDE).to_image();
+            encode(&cropped, kind, out_path)
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn draw_multiline<F: Font>(
     canvas: &mut RgbImage,
     text: &str,
     ox: i32,
     oy: i32,
+    max_w: u32,
     line_height: i32,
     scale: PxScale,
     color: Rgb<u8>,
     font: &F,
+    ls_px: f32,
 ) {
     for (i, line) in text.split('\n').enumerate() {
         let y = oy + (i as i32) * line_height;
-        // Wrap at canvas width minus matching right margin (= ox).
-        let max_w = canvas.width() as i32 - 2 * ox;
-        for (j, sub) in wrap_line(line, font, scale, max_w.max(0) as u32)
+        for (j, sub) in wrap_line(line, font, scale, max_w, ls_px)
             .iter()
             .enumerate()
         {
             let yy = y + (j as i32) * line_height;
-            draw_text_mut(canvas, color, ox, yy, scale, font, sub);
+            if ls_px.abs() < f32::EPSILON {
+                // No letter-spacing → draw the whole substring at once (unchanged).
+                draw_text_mut(canvas, color, ox, yy, scale, font, sub);
+            } else {
+                draw_spaced(canvas, sub, ox, yy, scale, color, font, ls_px);
+            }
         }
     }
 }
 
-fn wrap_line<F: Font>(line: &str, font: &F, scale: PxScale, max_w: u32) -> Vec<String> {
-    if max_w == 0 || measure(line, font, scale) <= max_w as f32 {
+/// Draw a single line glyph-by-glyph, adding `ls_px` between glyphs.
+fn draw_spaced<F: Font>(
+    canvas: &mut RgbImage,
+    line: &str,
+    ox: i32,
+    y: i32,
+    scale: PxScale,
+    color: Rgb<u8>,
+    font: &F,
+    ls_px: f32,
+) {
+    let scaled = font.as_scaled(scale);
+    let mut x = ox as f32;
+    let mut prev = None;
+    let mut buf = [0u8; 4];
+    for c in line.chars() {
+        let g = font.glyph_id(c);
+        if let Some(p) = prev {
+            x += scaled.kern(p, g);
+        }
+        draw_text_mut(canvas, color, x.round() as i32, y, scale, font, c.encode_utf8(&mut buf));
+        x += scaled.h_advance(g) + ls_px;
+        prev = Some(g);
+    }
+}
+
+fn wrap_line<F: Font>(line: &str, font: &F, scale: PxScale, max_w: u32, ls_px: f32) -> Vec<String> {
+    if max_w == 0 || measure(line, font, scale, ls_px) <= max_w as f32 {
         return vec![line.to_string()];
     }
     let mut out = Vec::new();
@@ -335,7 +487,7 @@ fn wrap_line<F: Font>(line: &str, font: &F, scale: PxScale, max_w: u32) -> Vec<S
         } else {
             format!("{cur} {word}")
         };
-        if measure(&tentative, font, scale) <= max_w as f32 {
+        if measure(&tentative, font, scale, ls_px) <= max_w as f32 {
             cur = tentative;
         } else {
             if !cur.is_empty() {
@@ -353,7 +505,7 @@ fn wrap_line<F: Font>(line: &str, font: &F, scale: PxScale, max_w: u32) -> Vec<S
     out
 }
 
-fn measure<F: Font>(text: &str, font: &F, scale: PxScale) -> f32 {
+fn measure<F: Font>(text: &str, font: &F, scale: PxScale, ls_px: f32) -> f32 {
     let scaled = font.as_scaled(scale);
     let mut width = 0.0_f32;
     let mut last = None;
@@ -362,7 +514,7 @@ fn measure<F: Font>(text: &str, font: &F, scale: PxScale) -> f32 {
         if let Some(prev) = last {
             width += scaled.kern(prev, g);
         }
-        width += scaled.h_advance(g);
+        width += scaled.h_advance(g) + ls_px;
         last = Some(g);
     }
     width

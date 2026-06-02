@@ -13,44 +13,212 @@
         <p class="subtitle">Text + logo overlay in batch</p>
       </header>
 
-      <section class="panes">
-        <section id="dropzone-sheet" class="dropzone" data-kind="sheet">
+      <!-- Screen 1 — pick the working folder -->
+      <section id="screen-folder" class="screen">
+        <section id="dropzone-folder" class="dropzone" data-kind="folder">
           <div class="dropzone-inner">
             <svg viewBox="0 0 24 24" width="36" height="36" aria-hidden="true">
-              <path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zM8 13h8v2H8v-2zm0 4h8v2H8v-2z"/>
+              <path fill="currentColor" d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/>
             </svg>
-            <p class="dz-title" id="sheet-title">Drop a CSV or XLSX</p>
-            <p class="dz-hint" id="sheet-hint">first column = folder name</p>
-            <button id="pick-sheet" class="btn-pick" type="button">Choose a file</button>
+            <p class="dz-title" id="folder-title">Choose a working folder</p>
+            <pre class="dz-tree" aria-hidden="true">Working folder/
+├─ Images/        (collections: Base/, african/, …)
+└─ file.xlsx      (sheet "Batcher")</pre>
+            <p class="dz-hint" id="folder-hint">Drop the folder here, or use the button</p>
+            <button id="pick-folder" class="btn-pick" type="button">Choose folder</button>
           </div>
         </section>
+      </section>
 
-        <section id="dropzone-images" class="dropzone" data-kind="images">
-          <div class="dropzone-inner">
-            <svg viewBox="0 0 24 24" width="36" height="36" aria-hidden="true">
-              <path fill="currentColor" d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3 3.5-4.5L19 18H5l3.5-4.5z"/>
-            </svg>
-            <p class="dz-title" id="images-title">Drop images or a folder</p>
-            <p class="dz-hint" id="images-hint">JPG, JPEG, PNG</p>
-            <div class="pick-buttons">
-              <button id="pick-images" class="btn-pick" type="button">Choose images</button>
-              <button id="pick-folder" class="btn-pick" type="button">Choose folder</button>
+      <!-- Screen 2 — choose layout templates and preview -->
+      <section id="screen-layout" class="screen" hidden>
+        <div class="layout-grid">
+          <!-- Left: image list -->
+          <aside class="panel panel-left">
+            <div class="panel-row">
+              <label for="collection-select" class="panel-label" id="folder-label">Folder</label>
+              <select id="collection-select" class="select"></select>
+            </div>
+            <div id="image-list" class="image-list"></div>
+            <div class="panel-foot">
+              <span class="panel-label">Apply</span>
+              <select id="apply-template" class="select select-sm">
+                <option value="template1">template-1</option>
+                <option value="custom">custom</option>
+              </select>
+              <button id="apply-to-selection" class="btn-pick" type="button">to selection</button>
+            </div>
+          </aside>
+
+          <!-- Center: live preview -->
+          <div class="panel panel-center">
+            <p id="preview-title" class="preview-title"></p>
+            <div class="preview-frame">
+              <div id="preview-stage" class="preview-stage">
+                <div id="preview-comp" class="preview-comp">
+                  <img id="preview-img" class="preview-img" alt="" />
+                  <div class="preview-gradient"></div>
+                  <div id="preview-text" class="preview-text"></div>
+                  <img id="preview-logo" class="preview-logo" alt="" />
+                </div>
+                <div class="preview-safezone"></div>
+              </div>
+            </div>
+            <label class="safe-toggle">
+              <input type="checkbox" id="safe-zone" /> Safe zone
+            </label>
+          </div>
+
+          <!-- Right: controls -->
+          <aside class="panel panel-right">
+            <div class="ctrl-group">
+              <label class="panel-label" for="template-select">template</label>
+              <select id="template-select" class="select"></select>
+              <div id="template-actions" class="template-actions" hidden>
+                <button id="tpl-edit" class="btn-pick" type="button">Edit</button>
+                <button id="tpl-save" class="btn-pick" type="button" hidden>Save</button>
+                <button id="tpl-cancel" class="btn-pick" type="button" hidden>Cancel</button>
+              </div>
+              <div id="tpl-create-row" class="template-create" hidden>
+                <input id="tpl-name" class="num tpl-name" type="text" placeholder="New template name" />
+                <button id="tpl-create" class="btn-pick" type="button">Create</button>
+              </div>
+            </div>
+
+            <div id="custom-controls" class="ctrl-custom">
+              <p class="ctrl-head">text</p>
+              <div class="ctrl-row">
+                <span class="field">
+                  <input id="font-size" class="num" type="number" min="8" max="400" step="1" value="84" title="Font size (px)" />
+                </span>
+                <span class="field">
+                  <span class="input-ico">
+                    <svg class="ctrl-ico" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M17.5 17a.5.5 0 0 1 0 1h-11a.5.5 0 0 1 0-1h11ZM12.25 8a.5.5 0 0 1 .476.347l2.25 7a.5.5 0 1 1-.952.306L13.494 14h-2.987l-.531 1.653a.5.5 0 1 1-.952-.306l2.25-7 .03-.075A.5.5 0 0 1 11.75 8h.5Zm-1.422 5h2.344L12 9.354 10.828 13ZM17.5 6a.5.5 0 0 1 0 1h-11a.5.5 0 0 1 0-1h11Z"/></svg>
+                    <input id="line-height" class="num" type="number" min="0.5" max="3" step="0.05" value="1.18" title="Line height" />
+                  </span>
+                </span>
+                <span class="field">
+                  <span class="input-ico">
+                    <svg class="ctrl-ico" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.854 6.146a.5.5 0 0 0-.708.708V17.5a.5.5 0 0 0 1 0V6.5a.5.5 0 0 0-.292-.354ZM17.854 6.146a.5.5 0 0 0-.708.708V17.5a.5.5 0 0 0 1 0V6.5a.5.5 0 0 0-.292-.354Z"/><path fill="currentColor" fill-rule="evenodd" d="M12.25 9a.5.5 0 0 1 .472.335l1.75 5a.5.5 0 0 1-.944.33L13.121 13.5h-2.241l-.407 1.165a.5.5 0 0 1-.944-.33l1.75-5 .032-.072A.5.5 0 0 1 11.75 9h.5ZM12 10.298l.77 2.202h-1.54L12 10.298Z" clip-rule="evenodd"/></svg>
+                    <input id="letter-spacing" class="num" type="number" min="-20" max="100" step="1" value="0" title="Letter spacing (%)" />
+                    <span class="unit">%</span>
+                  </span>
+                </span>
+              </div>
+              <div class="ctrl-row">
+                <span class="field">
+                  <span class="input-ico">
+                    <span class="ctrl-lbl">X</span>
+                    <select id="text-x" class="select select-sm">
+                      <option value="left" selected>left</option>
+                      <option value="center">center</option>
+                      <option value="right">right</option>
+                    </select>
+                  </span>
+                </span>
+                <span class="field">
+                  <span class="input-ico">
+                    <span class="ctrl-lbl">Y</span>
+                    <input id="text-y" class="num" type="number" min="0" max="100" step="1" value="18" />
+                    <span class="unit">%</span>
+                  </span>
+                </span>
+              </div>
+              <div class="ctrl-row">
+                <span class="field">
+                  <span class="input-ico">
+                    <span class="ctrl-lbl">W</span>
+                    <input id="text-w" class="num" type="number" min="10" max="100" step="1" value="81" />
+                    <span class="unit">%</span>
+                  </span>
+                </span>
+                <span class="field"></span>
+              </div>
+              <p class="ctrl-head">logo</p>
+              <div class="ctrl-row">
+                <span class="field">
+                  <span class="input-ico">
+                    <span class="ctrl-lbl">X</span>
+                    <select id="logo-x" class="select select-sm">
+                      <option value="left">left</option>
+                      <option value="center" selected>center</option>
+                      <option value="right">right</option>
+                    </select>
+                  </span>
+                </span>
+                <span class="field">
+                  <span class="input-ico">
+                    <span class="ctrl-lbl">Y</span>
+                    <input id="logo-y" class="num" type="number" min="0" max="100" step="1" value="68" />
+                    <span class="unit">%</span>
+                  </span>
+                </span>
+              </div>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="ctrl-group">
+              <label class="panel-label">image preview</label>
+              <div class="ctrl-row">
+                <select id="preview-collection" class="select select-sm"></select>
+                <button id="preview-aspect" class="aspect-toggle" type="button">
+                  <svg class="ctrl-ico" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M6 7.5C6 7.10218 6.15804 6.72064 6.43934 6.43934C6.72064 6.15804 7.10218 6 7.5 6H16.5C16.8978 6 17.2794 6.15804 17.5607 6.43934C17.842 6.72064 18 7.10218 18 7.5V16.5C18 16.8978 17.842 17.2794 17.5607 17.5607C17.2794 17.842 16.8978 18 16.5 18H7.5C7.10218 18 6.72064 17.842 6.43934 17.5607C6.15804 17.2794 6 16.8978 6 16.5V7.5ZM16.5 7H7.5C7.36739 7 7.24021 7.05268 7.14645 7.14645C7.05268 7.24021 7 7.36739 7 7.5V16.5C7 16.6326 7.05268 16.7598 7.14645 16.8536C7.24021 16.9473 7.36739 17 7.5 17H16.5C16.6326 17 16.7598 16.9473 16.8536 16.8536C16.9473 16.7598 17 16.6326 17 16.5V7.5C17 7.36739 16.9473 7.24021 16.8536 7.14645C16.7598 7.05268 16.6326 7 16.5 7ZM9.5 9C9.36739 9 9.24021 9.05268 9.14645 9.14645C9.05268 9.24021 9 9.36739 9 9.5V11.5C9 11.6326 9.05268 11.7598 9.14645 11.8536C9.24021 11.9473 9.36739 12 9.5 12C9.63261 12 9.75979 11.9473 9.85355 11.8536C9.94732 11.7598 10 11.6326 10 11.5V10H11.5C11.6326 10 11.7598 9.94732 11.8536 9.85355C11.9473 9.75979 12 9.63261 12 9.5C12 9.36739 11.9473 9.24021 11.8536 9.14645C11.7598 9.05268 11.6326 9 11.5 9H9.5ZM15 12.5C15 12.3674 14.9473 12.2402 14.8536 12.1464C14.7598 12.0527 14.6326 12 14.5 12C14.3674 12 14.2402 12.0527 14.1464 12.1464C14.0527 12.2402 14 12.3674 14 12.5V14H12.5C12.3674 14 12.2402 14.0527 12.1464 14.1464C12.0527 14.2402 12 14.3674 12 14.5C12 14.6326 12.0527 14.7598 12.1464 14.8536C12.2402 14.9473 12.3674 15 12.5 15H14.5C14.6326 15 14.7598 14.9473 14.8536 14.8536C14.9473 14.7598 15 14.6326 15 14.5V12.5Z"/></svg>
+                  <span id="aspect-label">9:16</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="ctrl-group">
+              <label class="panel-label">text preview</label>
+              <div class="ctrl-row">
+                <select id="preview-language" class="select select-sm"></select>
+                <span class="input-ico msg-ico">
+                  <svg class="ctrl-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><path d="M18 10H6M18 14H6M7.33333 6H16.6667C17.403 6 18 6.59695 18 7.33333V16.6667C18 17.403 17.403 18 16.6667 18H7.33333C6.59695 18 6 17.403 6 16.6667V7.33333C6 6.59695 6.59695 6 7.33333 6Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <select id="preview-message" class="select select-sm"></select>
+                </span>
+              </div>
+            </div>
+
+            <p id="layout-warnings" class="warnings" hidden></p>
+          </aside>
+        </div>
+
+        <div class="layout-actions">
+          <button id="back-folder" class="btn" type="button">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+            Back
+          </button>
+          <span class="actions-spacer"></span>
+          <button id="proceed-selected" class="btn" type="button">Proceed only selected</button>
+          <button id="proceed-all" class="btn btn-primary" type="button">Proceed all images</button>
+          <label class="fmt-check"><input type="checkbox" id="fmt-9x16" checked /> 9:16</label>
+          <label class="fmt-check"><input type="checkbox" id="fmt-1x1" checked /> 1:1</label>
+        </div>
+      </section>
+
+      <!-- Screen 3 — progress + summary -->
+      <section id="screen-progress" class="screen" hidden>
+        <div class="progress-center">
+          <div class="progress-card">
+            <div class="progress-head">
+              <span id="progress-spinner" class="spinner" aria-hidden="true"></span>
+              <h2 id="progress-title">Generating…</h2>
+            </div>
+            <div class="progress-bar-row">
+              <progress id="progress" max="1" value="0"></progress>
+              <span id="progress-pct" class="progress-pct">0%</span>
+            </div>
+            <p id="progress-label" class="progress-label">0 / 0</p>
+            <p id="progress-file" class="progress-file"></p>
+            <section id="summary" class="summary" hidden></section>
+            <div class="progress-actions">
+              <button id="back-layout" class="btn" type="button" hidden>← Back to layout</button>
+              <button id="open-folder" class="btn" type="button" hidden>Open folder</button>
             </div>
           </div>
-        </section>
+        </div>
       </section>
-
-      <button id="generate" class="btn btn-primary" disabled>
-        <span id="generate-label">Generate</span>
-      </button>
-
-      <section id="progress-wrap" class="progress-wrap" hidden>
-        <progress id="progress" max="1" value="0"></progress>
-        <p id="progress-label" class="progress-label">0 / 0</p>
-        <p id="progress-file" class="progress-file"></p>
-      </section>
-
-      <section id="summary" class="summary" hidden></section>
 
       <footer>
         <button id="refresh" class="link" type="button" title="Check for updates">
