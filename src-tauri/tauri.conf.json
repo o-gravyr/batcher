@@ -55,7 +55,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM1OUQ5OTEyODRFOTJEOEYKUldTUExlbUVFcG1kTmMzZ1BSdSsveXozWFFNdEZOQTFhaHlVVXU3cFZHUVQzNXlrUWxDY2NNY3cK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJBNTlGMUQyMzRGMjE3NQpSV1IxSVU4akhaK2xBb25pbk1xVUc1MVFVMi9Jck12ZFJxSERzcjlkcHUvRXZYTVJVY0grTmF0bQo=",
       "endpoints": [
         "https://github.com/o-gravyr/batcher/releases/latest/download/latest.json"
       ]
