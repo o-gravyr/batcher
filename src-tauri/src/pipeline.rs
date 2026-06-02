@@ -284,6 +284,28 @@ struct Job {
     renders: Vec<Render>,
 }
 
+/// Scene identity shared across collections: the source subfolder + filename stem,
+/// ignoring the extension. The same scene lives in every language's collection under the
+/// same key — `base` stores it as `.jpg`, the other collections as `.png`.
+fn scene_of(img: &ImageInfo) -> (&str, &str) {
+    (img.subfolder.as_str(), img.stem.as_str())
+}
+
+/// Scene keys for the user's checked images. The selection only ever holds paths from one
+/// collection (the left list shows one at a time), so resolving paths → scenes lets a
+/// "Proceed selected" run emit the matching scene in *every* language's collection.
+fn selected_scenes<'a>(
+    collections: &'a [Collection],
+    selected_paths: &HashSet<&str>,
+) -> HashSet<(&'a str, &'a str)> {
+    collections
+        .iter()
+        .flat_map(|c| &c.images)
+        .filter(|img| selected_paths.contains(img.path.as_str()))
+        .map(scene_of)
+        .collect()
+}
+
 pub fn process(app: AppHandle, folder: PathBuf, plan: Plan) -> Result<ProcessResult, String> {
     let ws = scan_workspace(&folder)?;
     let root = output_root(&folder);
@@ -297,9 +319,14 @@ pub fn process(app: AppHandle, folder: PathBuf, plan: Plan) -> Result<ProcessRes
         return Ok(skipped(root_str, true, false));
     }
 
-    let selected: HashSet<&str> = plan.selected.iter().map(|s| s.as_str()).collect();
     let by_name: HashMap<&str, &Collection> =
         ws.collections.iter().map(|c| (c.name.as_str(), c)).collect();
+
+    // "Proceed selected" sends absolute paths from ONE collection (the left list shows one
+    // at a time). Resolve them to scenes so the selection renders the matching scene in
+    // every language's collection (see `selected_scenes`/`scene_of`).
+    let selected_paths: HashSet<&str> = plan.selected.iter().map(|s| s.as_str()).collect();
+    let selected = selected_scenes(&ws.collections, &selected_paths);
 
     // Outputs go to Output/<language>/<source-subfolder>/ (one folder per language,
     // keeping the source subfolder structure inside).
@@ -328,7 +355,7 @@ pub fn process(app: AppHandle, folder: PathBuf, plan: Plan) -> Result<ProcessRes
         };
         let lang_dir = root.join(spreadsheet::sanitize_component(&col.language));
         for image in &collection.images {
-            if plan.only_selected && !selected.contains(image.path.as_str()) {
+            if plan.only_selected && !selected.contains(&scene_of(image)) {
                 continue;
             }
             let spec = plan
@@ -514,6 +541,54 @@ mod tests {
         // Preview counter is non-zero and consistent.
         let pv = preview(&input_dir()).expect("preview");
         assert!(pv.total_outputs > 0);
+    }
+
+    // "Proceed selected" stores paths from one collection (e.g. base/.jpg). The selection
+    // must still render the SAME scene in the other languages' collections (african/.png),
+    // matched by subfolder+stem — otherwise only the selected collection's language is output.
+    #[test]
+    fn selected_scene_matches_across_collections() {
+        let ws = scan_workspace(&input_dir()).expect("scan");
+        let base = ws
+            .collections
+            .iter()
+            .find(|c| c.name.eq_ignore_ascii_case("base"))
+            .expect("base collection");
+        let african = ws
+            .collections
+            .iter()
+            .find(|c| c.name.eq_ignore_ascii_case("african"))
+            .expect("african collection");
+
+        // A base scene (.jpg) that also exists in african (.png).
+        let base_img = base
+            .images
+            .iter()
+            .find(|b| african.images.iter().any(|a| scene_of(a) == scene_of(b)))
+            .expect("a scene shared by base and african");
+        let afr_img = african
+            .images
+            .iter()
+            .find(|a| scene_of(a) == scene_of(base_img))
+            .expect("african counterpart");
+        assert_ne!(
+            afr_img.path, base_img.path,
+            "counterpart should be a different file (jpg vs png)"
+        );
+
+        // Simulate selecting only the base path, as the UI does.
+        let selected_paths: HashSet<&str> = std::iter::once(base_img.path.as_str()).collect();
+        let scenes = selected_scenes(&ws.collections, &selected_paths);
+
+        // The african scene is now selected (the fix), even though its exact path is not.
+        assert!(
+            scenes.contains(&scene_of(afr_img)),
+            "african scene must be selected via the base selection"
+        );
+        assert!(
+            !selected_paths.contains(afr_img.path.as_str()),
+            "old path-equality matching would have missed the african file"
+        );
     }
 
     #[test]

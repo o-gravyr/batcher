@@ -116,6 +116,7 @@ const toast = $("toast");
 const state = {
   workingFolder: null,
   busy: false,
+  scanning: false,
   ws: null,
   leftCollection: null,
   templates: {}, // path -> spec
@@ -197,7 +198,10 @@ function showToast(text) {
 
 // --- Workspace loading ---
 async function setWorkingFolder(path) {
-  if (!path || state.busy) return;
+  // `scanning` guards re-entry while a scan is in flight (a rapid second drop or
+  // drop+picker would otherwise race two scans and clobber state).
+  if (!path || state.busy || state.scanning) return;
+  state.scanning = true;
   state.workingFolder = path;
   folderTitle.textContent = basename(path) + "/";
   folderHint.textContent = "Reading folder…";
@@ -210,6 +214,8 @@ async function setWorkingFolder(path) {
     requestAnimationFrame(sizePreview);
   } catch (e) {
     folderHint.textContent = `Error: ${e}`;
+  } finally {
+    state.scanning = false;
   }
 }
 
@@ -416,7 +422,7 @@ function setSpecKind(path, tid) {
 }
 
 function setActive(img, collName) {
-  state.active = { path: img.path, rel: img.rel, collection: collName };
+  state.active = { path: img.path, rel: img.rel, subfolder: img.subfolder, stem: img.stem, collection: collName };
   state.editing = false;
   state.preview.collection = collName;
   previewCollection.value = collName;
@@ -557,8 +563,11 @@ function previewImagePath() {
   if (!state.active) return null;
   const coll = collectionByName(state.preview.collection);
   if (!coll) return state.active.path;
-  // Prefer the same scene (rel) in the chosen preview collection.
-  const same = coll.images.find((i) => i.rel === state.active.rel);
+  // Same scene across collections, ignoring extension: `base` stores .jpg while
+  // the other collections store .png, so full `rel` won't match across them.
+  const same = coll.images.find(
+    (i) => i.subfolder === state.active.subfolder && i.stem === state.active.stem
+  );
   if (same) return same.path;
   return coll.images.length ? coll.images[0].path : state.active.path;
 }
@@ -758,9 +767,14 @@ function resetProgress() {
 // --- Event wiring ---
 collectionSelect.addEventListener("change", () => {
   state.leftCollection = collectionSelect.value;
+  // Selection is per-collection: dropping it avoids generating images from a
+  // collection the user can no longer see (their checkboxes are now hidden).
+  state.selected = new Set();
+  state.anchorPath = null;
   renderImageList();
   const coll = collectionByName(state.leftCollection);
   if (coll && coll.images.length) setActive(coll.images[0], coll.name);
+  updateProceedState();
 });
 
 applyToSelection.addEventListener("click", () => {

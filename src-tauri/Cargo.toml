@@ -1,6 +1,6 @@
 [package]
 name = "gravyr-batcher"
-version = "1.0.0"
+version = "1.0.1"
 description = "Batch text + logo overlay on images from a CSV or XLSX"
 edition = "2021"
 rust-version = "1.77"
